@@ -1,0 +1,216 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  FILE_PROCESSOR_URL: "http://file-processor-service:5000/"
+  QUARRY_URL: "http://quarry-service:5000/"
+  SINUS_TEST_PARSER: "http://sinus-parser-service:5000/"
+  XY_TEST_PARSER: "http://xy-test-parser-service:5000/"
+  MONGO_URI: "mongodb://mongodb-service:27017"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: file-processor-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: file-processor
+  template:
+    metadata:
+      labels:
+        app: file-processor
+    spec:
+      containers:
+        - name: file-processor
+          image: docker.io/wojtakl/file_processor:latest
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - configMapRef:
+                name: app-config
+          command: ["uvicorn", "file_processor:app", "--host", "0.0.0.0", "--port", "5000"]
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: file-processor-service
+spec:
+  selector:
+    app: file-processor
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: front-end-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: front-end
+  template:
+    metadata:
+      labels:
+        app: front-end
+    spec:
+      containers:
+        - name: front-end
+          image: docker.io/wojtakl/front_end_service:latest
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - configMapRef:
+                name: app-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: front-end-service
+spec:
+  selector:
+    app: front-end
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 5000
+      nodePort: 32000
+  type: LoadBalancer
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sinus-parser-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sinus-parser
+  template:
+    metadata:
+      labels:
+        app: sinus-parser
+    spec:
+      containers:
+        - name: sinus-parser
+          image: docker.io/wojtakl/sinus_parser:latest
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - configMapRef:
+                name: app-config
+          command: ["uvicorn", "sinus_parser:app", "--host", "0.0.0.0", "--port", "5000"]
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sinus-parser-service
+spec:
+  selector:
+    app: sinus-parser
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quarry-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: quarry
+  template:
+    metadata:
+      labels:
+        app: quarry
+    spec:
+      containers:
+        - name: quarry
+          image: docker.io/wojtakl/quarry:latest
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - configMapRef:
+                name: app-config
+          command: ["uvicorn", "quarry:app", "--host", "0.0.0.0", "--port", "5000"]
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quarry-service
+spec:
+  selector:
+    app: quarry
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+spec:
+  serviceName: "mongodb-service"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+        - name: mongodb
+          image: mongo:latest
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - name: mongodb-storage
+              mountPath: /data/db
+  volumeClaimTemplates:
+    - metadata:
+        name: mongodb-storage
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-service
+spec:
+  selector:
+    app: mongodb
+  ports:
+    - protocol: TCP
+      port: 27017
+      targetPort: 27017
+  type: ClusterIP
